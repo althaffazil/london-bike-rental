@@ -1,0 +1,111 @@
+-- How many docking station are there?
+SELECT COUNT(id)
+FROM `bigquery-public-data.london_bicycles.cycle_stations`;
+
+-- What is the total number of docks installed each year?
+SELECT EXTRACT(year FROM install_date) AS year, SUM(docks_count) AS total_docks
+FROM `bigquery-public-data.london_bicycles.cycle_stations`
+WHERE install_date IS NOT NULL
+GROUP BY year
+ORDER BY year;
+
+-- What is the total number of bikes available to rent?
+SELECT SUM(bikes_count) AS bikes_count
+FROM `bigquery-public-data.london_bicycles.cycle_stations`; 
+
+-- Bikes docked vs bikes available to rent by year
+SELECT EXTRACT(year FROM install_date) AS year, SUM(bikes_count) AS bikes_available,
+SUM(docks_count-nbEmptyDocks) AS bikes_docked
+FROM `bigquery-public-data.london_bicycles.cycle_stations`
+WHERE install_date IS NOT NULL
+GROUP BY year
+ORDER BY year;
+
+-- Which docking station has most and least number of docks available?
+
+SELECT name AS station_name,docks_count
+FROM `bigquery-public-data.london_bicycles.cycle_stations`
+WHERE docks_count = (
+  SELECT MAX(docks_count)
+  FROM `bigquery-public-data.london_bicycles.cycle_stations`);
+
+SELECT name AS station_name,docks_count
+FROM `bigquery-public-data.london_bicycles.cycle_stations`
+WHERE docks_count = (
+  SELECT MIN(docks_count)
+  FROM `bigquery-public-data.london_bicycles.cycle_stations`);
+
+-- What is the first rental start date and last rental end date?
+SELECT MIN(date(start_date)) AS first_rental_date, MAX(date(end_date))AS last_rental_date
+FROM `bigquery-public-data.london_bicycles.cycle_hire`;
+
+-- What are the top 10 popular destinations by ride count?
+SELECT end_station_name, COUNT(rental_id) AS ride_count
+FROM `bigquery-public-data.london_bicycles.cycle_hire`
+GROUP BY end_station_name
+ORDER BY ride_count DESC
+LIMIT 10;
+
+-- What is the longest, shortest and average rental duration?
+SELECT ROUND(max(duration)/60, 0) AS longest_rental_dur,
+       ROUND(min(duration)/60, 0) AS shortest_rental_dur,
+       ROUND(avg(duration)/60, 0) AS avg_rental_dur
+FROM `bigquery-public-data.london_bicycles.cycle_hire`
+WHERE duration >= 60;
+
+-- How many different bikes and bike models have been in use over the full period?
+SELECT COUNT(DISTINCT bike_id) AS bikes_used,
+       COUNT(DISTINCT bike_model) AS models_used
+FROM `bigquery-public-data.london_bicycles.cycle_hire`;
+
+-- What is the ride count for each bike model?
+SELECT bike_model, COUNT(rental_id) AS ride_count
+FROM `bigquery-public-data.london_bicycles.cycle_hire`
+GROUP BY bike_model
+ORDER BY ride_count;
+
+-- What is the total number of ride each year?
+SELECT extract(YEAR
+               FROM start_date) AS YEAR,
+       COUNT(rental_id) AS ride_count
+FROM `bigquery-public-data.london_bicycles.cycle_hire`
+GROUP BY YEAR
+ORDER BY ride_count DESC;
+
+-- Who has rented for maximum duration each year?
+WITH RankedRentals AS (
+    SELECT 
+        rental_id,
+        EXTRACT(YEAR FROM start_date) AS year,
+        duration,
+        ROW_NUMBER() OVER (PARTITION BY EXTRACT(YEAR FROM start_date) ORDER BY duration DESC) AS rn
+    FROM 
+        `bigquery-public-data.london_bicycles.cycle_hire`
+)
+SELECT rental_id, year, duration AS max_dur,rn
+FROM 
+    RankedRentals
+WHERE rn = 1
+ORDER BY year;
+
+-- 13. What is the trend for most popular starting point
+WITH hyde_park_rental AS
+  (SELECT start_station_name,
+          extract(YEAR
+                  FROM start_date) AS rental_year,
+          count(rental_id) AS rental_count
+   FROM `bigquery-public-data.london_bicycles.cycle_hire`
+   WHERE start_station_name = 'Hyde Park Corner, Hyde Park'
+   GROUP BY start_station_name,
+            rental_year
+   ORDER BY rental_year)
+SELECT start_station_name,
+       rental_year,
+       rental_count,
+       round((rental_count - prev_year_chg)/rental_count*100, 2) AS perc_change
+FROM
+  (SELECT *,
+          lag(rental_count) OVER (
+                                  ORDER BY rental_year) AS prev_year_chg
+   FROM hyde_park_rental
+   ORDER BY rental_year);
